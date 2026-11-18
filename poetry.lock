@@ -191,6 +191,23 @@ type = "directory"
 url = "services/scanner"
 
 [[package]]
+name = "echo-scheduler"
+version = "0.1.0"
+description = "Scheduler service: publishes a scan request for every image on a fixed interval"
+optional = false
+python-versions = ">=3.12,<4.0"
+groups = ["main"]
+files = []
+develop = true
+
+[package.dependencies]
+echo-common = "*"
+
+[package.source]
+type = "directory"
+url = "services/scheduler"
+
+[[package]]
 name = "greenlet"
 version = "3.5.6"
 description = "Lightweight in-process concurrent programming"
@@ -1257,4 +1274,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<4.0"
-content-hash = "5cd924a8f9b9cd690e9fa12d6a40ce6879294127b5755ba2b8c68a7dd79c8220"
+content-hash = "e24ff1d1971d937399727265aaa0c1dc639d1b2b1db0c9b6bd9b486f4cb29e1c"

@@ -1,0 +1,16 @@
+[project]
+name = "echo-scheduler"
+version = "0.1.0"
+description = "Scheduler service: publishes a scan request for every image on a fixed interval"
+requires-python = ">=3.12,<4.0"
+dependencies = ["echo-common"]
+
+[tool.poetry]
+packages = [{ include = "scheduler" }]
+
+[tool.poetry.dependencies]
+echo-common = { path = "../../common", develop = true }
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

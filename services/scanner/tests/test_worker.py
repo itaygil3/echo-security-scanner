@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from echo_common.db.repositories import CVERepository, ImageCVERepository, ImageRepository
 from echo_common.enums import ScannerType, ScanStatus, Severity
 from echo_common.messaging import ScanRequest
@@ -104,3 +106,63 @@ async def test_semaphore_limits_concurrent_scans(engine):
         i.scan_status for i in await ImageRepository(engine).list_all() if i.id in {r.image_id for r in requests}
     }
     assert statuses == {ScanStatus.SUCCESS}
+
+
+class FakeMessage:
+    """Stand-in for an aio-pika incoming message: records how it was settled."""
+
+    def __init__(self, body: bytes):
+        self.body = body
+        self.settled: str | None = None
+
+    async def ack(self):
+        self.settled = "ack"
+
+    async def reject(self, requeue: bool = False):
+        self.settled = f"reject(requeue={requeue})"
+
+
+async def test_done_message_is_acked(engine):
+    request = await _request(engine, "nginx:1.19")
+    message = FakeMessage(request.model_dump_json().encode())
+
+    await _worker(engine, FakeScanner([_finding("CVE-2021-3711", "openssl")])).process_message(message)
+
+    assert message.settled == "ack"
+
+
+async def test_failed_scan_message_is_acked(engine):
+    request = await _request(engine, "httpd:2.4")
+    message = FakeMessage(request.model_dump_json().encode())
+
+    await _worker(engine, FakeScanner(error=ImageNotFoundError("not found"))).process_message(message)
+
+    assert message.settled == "ack"  # handled: image marked FAILED, message removed
+
+
+async def test_invalid_message_is_dead_lettered(engine):
+    message = FakeMessage(b"garbage")
+    await _worker(engine, FakeScanner()).process_message(message)
+    assert message.settled == "reject(requeue=False)"
+
+
+async def test_unexpected_error_is_dead_lettered(engine):
+    request = await _request(engine, "redis:6.0")
+    message = FakeMessage(request.model_dump_json().encode())
+
+    await _worker(engine, FakeScanner(error=RuntimeError("bug"))).process_message(message)
+
+    assert message.settled == "reject(requeue=False)"
+
+
+async def test_cancelled_scan_is_not_settled(engine):
+    request = await _request(engine, "alpine:3.12")
+    message = FakeMessage(request.model_dump_json().encode())
+    task = asyncio.create_task(_worker(engine, FakeScanner(delay=10)).process_message(message))
+    await asyncio.sleep(0.2)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert message.settled is None  # RabbitMQ requeues it when the connection closes

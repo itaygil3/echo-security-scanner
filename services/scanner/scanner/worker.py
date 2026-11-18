@@ -22,7 +22,7 @@ class ScanWorker:
     """Consumes scan requests from RabbitMQ and runs each scan as a background task.
 
     - At most `concurrency` scans run at the same time (semaphore; RabbitMQ prefetch matches it).
-    - A message is acked only when its scan task is done.
+    - A message is acked (deleted from the queue) only when its scan task is done.
     - Expected scan failures (ScannerError): image marked FAILED, message acked.
     - Invalid messages and unexpected errors: message rejected to the dead-letter queue.
     """
@@ -80,6 +80,12 @@ class ScanWorker:
         task.add_done_callback(self.tasks.discard)
 
     async def process_message(self, message: AbstractIncomingMessage) -> None:
+        """Run one scan request and settle its message.
+
+        ack            -> done: RabbitMQ deletes the message from the queue
+        reject(False)  -> invalid or unexpected failure: RabbitMQ moves it to the dead-letter queue
+        neither        -> cancelled on shutdown: RabbitMQ requeues it when the connection closes
+        """
         try:
             request = ScanRequest.model_validate_json(message.body)
         except ValidationError as exc:
@@ -90,9 +96,15 @@ class ScanWorker:
             )
             await message.reject(requeue=False)
             return
-        # Any exception escaping this block rejects the message without requeue -> dead-letter queue.
-        async with message.process(requeue=False):
+
+        try:
             await self.process(request)
+        except Exception:
+            logger.exception("Unexpected error processing %s, sending to dead-letter queue", request.image)
+            await message.reject(requeue=False)
+            return
+
+        await message.ack()
 
     async def process(self, request: ScanRequest) -> None:
         """Scan one image (once a scan slot is free) and store the outcome on its row."""

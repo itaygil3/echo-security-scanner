@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from echo_common.enums import ScanStatus, Severity
+from echo_common.enums import ScannerType, ScanStatus, Severity
 from echo_common.models import CVE, Image, ImageCVE, ImageRef, Package
 
 
@@ -46,14 +46,21 @@ def test_image_from_db_row():
 
 
 def test_cve_accepts_cve_ids_and_normalizes_severity():
-    cve = CVE(id="CVE-2021-23017", severity="high")
+    cve = CVE(id="CVE-2021-23017", severity="high", source="trivy")
     assert cve.severity is Severity.HIGH
+    assert cve.source is ScannerType.TRIVY
 
 
 @pytest.mark.parametrize("bad_id", ["GHSA-xxxx-yyyy-zzzz", "DLA-1234-1", "CVE-21-1", ""])
 def test_cve_rejects_non_cve_ids(bad_id):
     with pytest.raises(ValidationError):
-        CVE(id=bad_id)
+        CVE(id=bad_id, source=ScannerType.TRIVY)
+
+
+@pytest.mark.parametrize("source", [None, "grype-unknown"])
+def test_cve_requires_known_source(source):
+    with pytest.raises(ValidationError):
+        CVE(id="CVE-2021-23017", source=source)
 
 
 def test_package_requires_name():

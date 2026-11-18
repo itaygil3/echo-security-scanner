@@ -1,0 +1,16 @@
+[project]
+name = "echo-scanner"
+version = "0.1.0"
+description = "Scanner service: consumes scan requests and scans container images for CVEs"
+requires-python = ">=3.12,<4.0"
+dependencies = ["echo-common"]
+
+[tool.poetry]
+packages = [{ include = "scanner" }]
+
+[tool.poetry.dependencies]
+echo-common = { path = "../../common", develop = true }
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

@@ -38,3 +38,9 @@ class ScanStatus(StrEnum):
     SCANNING = "SCANNING"
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
+
+
+class ScannerType(StrEnum):
+    """Available vulnerability scanner implementations (selected with SCANNER_TYPE)."""
+
+    TRIVY = "trivy"

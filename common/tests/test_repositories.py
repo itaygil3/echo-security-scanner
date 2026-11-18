@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from echo_common.db.repositories import CVERepository, ImageCVERepository, ImageRepository, PackageRepository
 from echo_common.db.tables import images
@@ -108,6 +109,29 @@ async def test_replace_findings_for_image(database):
     assert first[0].detected_at is not None
     assert [(f.cve_id, f.fixed_version) for f in second] == [("CVE-2022-1304", "1.1.1e")]
     assert cleared == []
+
+
+async def test_replace_findings_is_atomic(database):
+    async with database.session() as session:
+        image = await ImageRepository(session).get_by_ref(ImageRef.parse("nginx:1.19"))
+        await CVERepository(session).upsert_many([_cve("CVE-2021-3711")], **CVE_UPSERT)
+        pkg_repo = PackageRepository(session)
+        await pkg_repo.upsert_many([Package(name="openssl", type="debian")], **PACKAGE_UPSERT)
+        pkg_id = (await pkg_repo.get_ids([Package(name="openssl", type="debian")]))[("openssl", "debian")]
+        repo = ImageCVERepository(session)
+
+        kept = ImageCVE(image_id=image.id, cve_id="CVE-2021-3711", package_id=pkg_id, installed_version="1.1.1d")
+        await repo.replace_for_image(image.id, [kept])
+
+        # CVE not in the cves table -> FK violation after the delete already ran.
+        broken = ImageCVE(image_id=image.id, cve_id="CVE-1999-0001", package_id=pkg_id, installed_version="1.0")
+        with pytest.raises(IntegrityError):
+            await repo.replace_for_image(image.id, [broken])
+
+        # The delete was rolled back with the failed insert; the outer transaction is still usable.
+        remaining = await repo.list_for_image(image.id)
+
+    assert [f.cve_id for f in remaining] == ["CVE-2021-3711"]
 
 
 async def test_generic_update_and_delete_return_rowcounts(database):

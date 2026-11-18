@@ -57,6 +57,20 @@ services:
     # Give running scans time to finish on `docker compose stop` (worker waits up to 30s).
     stop_grace_period: 40s
 
+  scheduler:
+    build:
+      context: .
+      dockerfile: services/scheduler/Dockerfile
+    environment:
+      <<: *common-env
+      SCAN_INTERVAL_SECONDS: ${SCAN_INTERVAL_SECONDS:-900}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   rabbitmq-data:

@@ -6,7 +6,6 @@ cves = Table(
     "cves",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("severity", String(16), nullable=False),
     Column("title", Text),
     Column("description", Text),
     Column("primary_url", Text),

@@ -18,6 +18,6 @@ class ScanResult(DomainModel):
 
     def severity_counts(self) -> dict[Severity, int]:
         """Unique CVEs per severity (a CVE found in several packages is counted once)."""
-        unique = {f.cve.id: f.cve.severity for f in self.findings}
+        unique = {f.cve.id: f.severity for f in self.findings}
         counts = Counter(unique.values())
         return {severity: counts.get(severity, 0) for severity in Severity}

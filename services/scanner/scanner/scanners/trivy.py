@@ -115,7 +115,6 @@ class TrivyScanner(BaseScanner):
         return Finding(
             cve=CVE(
                 id=vuln.get("VulnerabilityID") or "",
-                severity=Severity.parse(vuln.get("Severity")),
                 title=vuln.get("Title"),
                 description=vuln.get("Description"),
                 primary_url=vuln.get("PrimaryURL"),
@@ -124,4 +123,7 @@ class TrivyScanner(BaseScanner):
             package=Package(name=vuln.get("PkgName") or "", type=package_type),
             installed_version=vuln.get("InstalledVersion") or "",
             fixed_version=vuln.get("FixedVersion") or None,
+            # Trivy's severity is per data source (vendor first, e.g. debian, oracle-oval; see SeveritySource),
+            # so it belongs to this finding, not to the CVE.
+            severity=Severity.parse(vuln.get("Severity")),
         )

@@ -15,7 +15,7 @@ from scanner.scanners import BaseScanner, ScannerError
 
 logger = logging.getLogger(__name__)
 
-CVE_DETAIL_COLUMNS = ["severity", "title", "description", "primary_url", "source"]
+CVE_DETAIL_COLUMNS = ["title", "description", "primary_url", "source"]
 
 
 class ScanWorker:
@@ -144,6 +144,7 @@ class ScanWorker:
                     package_id=package_ids[(f.package.name, f.package.type)],
                     installed_version=f.installed_version,
                     fixed_version=f.fixed_version,
+                    severity=f.severity,
                 )
                 for f in result.findings
             ],

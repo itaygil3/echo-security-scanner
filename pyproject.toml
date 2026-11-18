@@ -6,7 +6,7 @@ name = "echo-security-scanner"
 version = "0.1.0"
 description = "Container security scanner: Trivy scans, PostgreSQL storage, REST API"
 requires-python = ">=3.12,<4.0"
-dependencies = ["echo-common", "echo-scanner"]
+dependencies = ["echo-common", "echo-scanner", "echo-scheduler"]
 
 [tool.poetry]
 package-mode = false
@@ -14,6 +14,7 @@ package-mode = false
 [tool.poetry.dependencies]
 echo-common = { path = "common", develop = true }
 echo-scanner = { path = "services/scanner", develop = true }
+echo-scheduler = { path = "services/scheduler", develop = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8"
@@ -28,7 +29,7 @@ target-version = "py312"
 select = ["E", "F", "W", "I", "B", "UP", "SIM"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["echo_common", "scanner"]
+known-first-party = ["echo_common", "scanner", "scheduler"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --import-mode=importlib -m 'not e2e'"

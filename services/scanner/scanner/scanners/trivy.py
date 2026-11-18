@@ -37,8 +37,7 @@ class TrivyScanner(BaseScanner):
     async def _scan(self, image: ImageRef) -> list[Finding]:
         raw = await self._run(image)
         try:
-            # Reports can be several MB; parse off the event loop.
-            return await asyncio.to_thread(self._parse_report, raw)
+            return self._parse_report(raw)
         except ValueError as exc:
             raise ScannerExecutionError(f"Trivy returned an unreadable report for {image}") from exc
 

@@ -9,7 +9,8 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql+psycopg://echo:echo@localhost:5432/echo"
+    database_url: str = "postgresql+asyncpg://echo:echo@localhost:5432/echo"
+    database_pool_size: int = Field(default=5, gt=0)
     rabbitmq_url: str = "amqp://echo:echo@localhost:5672/%2F"
     scan_queue: str = "scan_requests"
 

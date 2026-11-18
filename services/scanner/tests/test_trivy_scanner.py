@@ -68,14 +68,14 @@ def test_parse_report_maps_fields():
     by_pkg = {f.package.name: f for f in TrivyScanner()._parse_report(REPORT)}
 
     ssl = by_pkg["libssl1.1"]
-    assert ssl.cve.severity is Severity.CRITICAL
+    assert ssl.severity is Severity.CRITICAL
     assert ssl.cve.source is ScannerType.TRIVY
     assert ssl.cve.primary_url == "https://avd.aquasec.com/nvd/cve-2021-3711"
     assert ssl.package.type == "debian"
     assert (ssl.installed_version, ssl.fixed_version) == ("1.1.1d-0+deb10u6", "1.1.1d-0+deb10u7")
 
     e2fs = by_pkg["e2fsprogs"]
-    assert e2fs.cve.severity is Severity.HIGH  # lower-case severity normalized
+    assert e2fs.severity is Severity.HIGH  # lower-case severity normalized
     assert e2fs.fixed_version is None  # no fix available
 
     assert by_pkg["setuptools"].package.type == "python-pkg"

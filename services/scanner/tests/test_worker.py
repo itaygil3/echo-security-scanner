@@ -13,10 +13,11 @@ from scanner.worker import ScanWorker
 
 def _finding(cve_id: str, package: str, version: str = "1.0", severity: Severity = Severity.HIGH) -> Finding:
     return Finding(
-        cve=CVE(id=cve_id, severity=severity, source=ScannerType.TRIVY),
+        cve=CVE(id=cve_id, source=ScannerType.TRIVY),
         package=Package(name=package, type="debian"),
         installed_version=version,
         fixed_version="2.0",
+        severity=severity,
     )
 
 
@@ -62,10 +63,14 @@ async def test_successful_scan_is_stored(engine):
 
     image = await ImageRepository(engine).get(request.image_id)
     stored = await ImageCVERepository(engine).list_for_image(request.image_id)
-    cves = {c.id: c for c in await CVERepository(engine).list_all()}
+    cves = {c.id for c in await CVERepository(engine).list_all()}
     assert image.scan_status is ScanStatus.SUCCESS and image.last_scan_at is not None and image.last_error is None
-    assert sorted(f.cve_id for f in stored) == ["CVE-2021-3711", "CVE-2021-3711", "CVE-2022-1304"]
-    assert cves["CVE-2021-3711"].severity is Severity.CRITICAL
+    assert sorted((f.cve_id, f.severity) for f in stored) == [
+        ("CVE-2021-3711", Severity.CRITICAL),
+        ("CVE-2021-3711", Severity.CRITICAL),
+        ("CVE-2022-1304", Severity.HIGH),
+    ]
+    assert cves == {"CVE-2021-3711", "CVE-2022-1304"}
 
 
 async def test_rescan_replaces_previous_findings(engine):

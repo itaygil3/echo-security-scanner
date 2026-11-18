@@ -85,7 +85,7 @@ async def test_scan_stores_findings_in_db(stack_engine):
         package = await packages.get(finding.package_id)
         assert cve.id.startswith("CVE-")
         assert cve.source is ScannerType.TRIVY
-        assert cve.severity in Severity
+        assert finding.severity in Severity
         assert package.type == "alpine"
         assert finding.installed_version
         assert finding.detected_at >= published_at

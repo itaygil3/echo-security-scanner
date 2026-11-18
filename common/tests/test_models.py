@@ -45,10 +45,10 @@ def test_image_from_db_row():
     assert str(image) == "nginx:1.19"
 
 
-def test_cve_accepts_cve_ids_and_normalizes_severity():
-    cve = CVE(id="CVE-2021-23017", severity="high", source="trivy")
-    assert cve.severity is Severity.HIGH
+def test_cve_accepts_cve_ids():
+    cve = CVE(id="CVE-2021-23017", source="trivy")
     assert cve.source is ScannerType.TRIVY
+    assert "severity" not in CVE.model_fields  # severity is per finding (ImageCVE)
 
 
 @pytest.mark.parametrize("bad_id", ["GHSA-xxxx-yyyy-zzzz", "DLA-1234-1", "CVE-21-1", ""])
@@ -69,10 +69,15 @@ def test_package_requires_name():
     assert Package(name="openssl").type == "unknown"
 
 
-def test_image_cve_requires_package_and_installed_version():
-    ok = ImageCVE(image_id=1, cve_id="CVE-2021-3711", package_id=2, installed_version="1.1.1d-0+deb10u6")
+def test_image_cve_requires_package_installed_version_and_severity():
+    ok = ImageCVE(
+        image_id=1, cve_id="CVE-2021-3711", package_id=2, installed_version="1.1.1d-0+deb10u6", severity="high"
+    )
     assert ok.fixed_version is None
+    assert ok.severity is Severity.HIGH  # case-insensitive
     with pytest.raises(ValidationError):
-        ImageCVE(image_id=1, cve_id="CVE-2021-3711", package_id=2, installed_version="")
+        ImageCVE(image_id=1, cve_id="CVE-2021-3711", package_id=2, installed_version="", severity="LOW")
     with pytest.raises(ValidationError):
-        ImageCVE(image_id=1, cve_id="CVE-2021-3711", installed_version="1.0")  # no package_id
+        ImageCVE(image_id=1, cve_id="CVE-2021-3711", installed_version="1.0", severity="LOW")  # no package_id
+    with pytest.raises(ValidationError):
+        ImageCVE(image_id=1, cve_id="CVE-2021-3711", package_id=2, installed_version="1.0")  # no severity

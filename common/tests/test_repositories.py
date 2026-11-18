@@ -7,19 +7,34 @@ from echo_common.enums import ScannerType, ScanStatus, Severity
 from echo_common.models import CVE, ImageCVE, ImageRef, Package
 
 # Upsert parameters as the worker passes them.
-CVE_UPSERT = {"conflict_on": ["id"], "update": ["severity", "title", "description", "primary_url", "source"]}
+CVE_UPSERT = {"conflict_on": ["id"], "update": ["title", "description", "primary_url", "source"]}
 PACKAGE_UPSERT = {"conflict_on": ["name", "type"]}
 OPENSSL = Package(name="openssl", type="debian")
 
 
-def _cve(cve_id: str, severity: Severity = Severity.HIGH, title: str = "t") -> CVE:
-    return CVE(id=cve_id, severity=severity, title=title, source=ScannerType.TRIVY)
+def _cve(cve_id: str, title: str = "t") -> CVE:
+    return CVE(id=cve_id, title=title, source=ScannerType.TRIVY)
+
+
+def _finding(image_id: int, cve_id: str, pkg_id: int, severity: Severity = Severity.HIGH, **kwargs) -> ImageCVE:
+    return ImageCVE(
+        image_id=image_id,
+        cve_id=cve_id,
+        package_id=pkg_id,
+        installed_version=kwargs.pop("installed_version", "1.1.1d"),
+        severity=severity,
+        **kwargs,
+    )
 
 
 async def _stored_openssl_id(engine) -> int:
     packages = PackageRepository(engine)
     await packages.upsert_many([OPENSSL], **PACKAGE_UPSERT)
     return (await packages.get_ids([OPENSSL]))[("openssl", "debian")]
+
+
+async def _image_id(engine, ref: str) -> int:
+    return (await ImageRepository(engine).get_by_ref(ImageRef.parse(ref))).id
 
 
 async def test_seeded_images(engine):
@@ -56,11 +71,10 @@ async def test_cve_upsert_dedupes_and_refreshes(engine):
     repo = CVERepository(engine)
     # Same CVE twice in one batch (e.g. reported for openssl and libssl1.1).
     await repo.upsert_many([_cve("CVE-2021-3711"), _cve("CVE-2021-3711"), _cve("CVE-2022-1304")], **CVE_UPSERT)
-    await repo.upsert_many([_cve("CVE-2021-3711", Severity.CRITICAL, title="updated")], **CVE_UPSERT)
+    await repo.upsert_many([_cve("CVE-2021-3711", title="updated")], **CVE_UPSERT)
     stored = {c.id: c for c in await repo.list_all()}
 
     assert set(stored) == {"CVE-2021-3711", "CVE-2022-1304"}
-    assert stored["CVE-2021-3711"].severity is Severity.CRITICAL
     assert stored["CVE-2021-3711"].title == "updated"
     assert stored["CVE-2021-3711"].source is ScannerType.TRIVY
 
@@ -80,47 +94,57 @@ async def test_package_upsert_many_is_idempotent(engine):
 
 
 async def test_replace_findings_for_image(engine):
-    image = await ImageRepository(engine).get_by_ref(ImageRef.parse("nginx:1.19"))
+    image_id = await _image_id(engine, "nginx:1.19")
     await CVERepository(engine).upsert_many([_cve("CVE-2021-3711"), _cve("CVE-2022-1304")], **CVE_UPSERT)
     pkg_id = await _stored_openssl_id(engine)
     repo = ImageCVERepository(engine)
 
-    finding = ImageCVE(image_id=image.id, cve_id="CVE-2021-3711", package_id=pkg_id, installed_version="1.1.1d")
+    finding = _finding(image_id, "CVE-2021-3711", pkg_id, Severity.CRITICAL)
     # Duplicate finding is dropped by the unique constraint.
-    await repo.replace_for_image(image.id, [finding, finding])
-    first = await repo.list_for_image(image.id)
+    await repo.replace_for_image(image_id, [finding, finding])
+    first = await repo.list_for_image(image_id)
 
-    newer = ImageCVE(
-        image_id=image.id, cve_id="CVE-2022-1304", package_id=pkg_id, installed_version="1.1.1d", fixed_version="1.1.1e"
-    )
-    await repo.replace_for_image(image.id, [newer])
-    second = await repo.list_for_image(image.id)
+    await repo.replace_for_image(image_id, [_finding(image_id, "CVE-2022-1304", pkg_id, fixed_version="1.1.1e")])
+    second = await repo.list_for_image(image_id)
 
-    await repo.replace_for_image(image.id, [])
-    cleared = await repo.list_for_image(image.id)
+    await repo.replace_for_image(image_id, [])
+    cleared = await repo.list_for_image(image_id)
 
-    assert [(f.cve_id, f.fixed_version) for f in first] == [("CVE-2021-3711", None)]
+    assert [(f.cve_id, f.fixed_version, f.severity) for f in first] == [("CVE-2021-3711", None, Severity.CRITICAL)]
     assert first[0].detected_at is not None
     assert [(f.cve_id, f.fixed_version) for f in second] == [("CVE-2022-1304", "1.1.1e")]
     assert cleared == []
 
 
+async def test_same_cve_keeps_its_severity_per_image(engine):
+    """Trivy rates a CVE per distribution (e.g. MEDIUM on Debian, HIGH on Oracle Linux)."""
+    await CVERepository(engine).upsert_many([_cve("CVE-2026-13595")], **CVE_UPSERT)
+    pkg_id = await _stored_openssl_id(engine)
+    repo = ImageCVERepository(engine)
+    debian_image, oracle_image = await _image_id(engine, "postgres:12"), await _image_id(engine, "mysql:8.0")
+
+    await repo.replace_for_image(debian_image, [_finding(debian_image, "CVE-2026-13595", pkg_id, Severity.MEDIUM)])
+    await repo.replace_for_image(oracle_image, [_finding(oracle_image, "CVE-2026-13595", pkg_id, Severity.HIGH)])
+
+    assert [f.severity for f in await repo.list_for_image(debian_image)] == [Severity.MEDIUM]
+    assert [f.severity for f in await repo.list_for_image(oracle_image)] == [Severity.HIGH]
+
+
 async def test_replace_findings_is_atomic(engine):
-    image = await ImageRepository(engine).get_by_ref(ImageRef.parse("nginx:1.19"))
+    image_id = await _image_id(engine, "nginx:1.19")
     await CVERepository(engine).upsert_many([_cve("CVE-2021-3711")], **CVE_UPSERT)
     pkg_id = await _stored_openssl_id(engine)
     repo = ImageCVERepository(engine)
 
-    kept = ImageCVE(image_id=image.id, cve_id="CVE-2021-3711", package_id=pkg_id, installed_version="1.1.1d")
-    await repo.replace_for_image(image.id, [kept])
+    await repo.replace_for_image(image_id, [_finding(image_id, "CVE-2021-3711", pkg_id)])
 
     # CVE not in the cves table -> FK violation after the delete already ran.
-    broken = ImageCVE(image_id=image.id, cve_id="CVE-1999-0001", package_id=pkg_id, installed_version="1.0")
+    broken = _finding(image_id, "CVE-1999-0001", pkg_id, installed_version="1.0")
     with pytest.raises(IntegrityError):
-        await repo.replace_for_image(image.id, [broken])
+        await repo.replace_for_image(image_id, [broken])
 
     # The delete was rolled back together with the failed insert.
-    assert [f.cve_id for f in await repo.list_for_image(image.id)] == ["CVE-2021-3711"]
+    assert [f.cve_id for f in await repo.list_for_image(image_id)] == ["CVE-2021-3711"]
 
 
 async def test_generic_update_and_delete_return_rowcounts(engine):

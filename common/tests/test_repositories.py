@@ -5,6 +5,10 @@ from echo_common.db.tables import images
 from echo_common.enums import ScannerType, ScanStatus, Severity
 from echo_common.models import CVE, ImageCVE, ImageRef, Package
 
+# Upsert parameters as the worker will pass them.
+CVE_UPSERT = {"conflict_on": ["id"], "update": ["severity", "title", "description", "primary_url", "source"]}
+PACKAGE_UPSERT = {"conflict_on": ["name", "type"]}
+
 
 def _cve(cve_id: str, severity: Severity = Severity.HIGH, title: str = "t") -> CVE:
     return CVE(id=cve_id, severity=severity, title=title, source=ScannerType.TRIVY)
@@ -46,8 +50,8 @@ async def test_cve_upsert_dedupes_and_refreshes(database):
     async with database.session() as session:
         repo = CVERepository(session)
         # Same CVE twice in one batch (e.g. reported for openssl and libssl1.1).
-        await repo.upsert_many([_cve("CVE-2021-3711"), _cve("CVE-2021-3711"), _cve("CVE-2022-1304")])
-        await repo.upsert_many([_cve("CVE-2021-3711", Severity.CRITICAL, title="updated")])
+        await repo.upsert_many([_cve("CVE-2021-3711"), _cve("CVE-2021-3711"), _cve("CVE-2022-1304")], **CVE_UPSERT)
+        await repo.upsert_many([_cve("CVE-2021-3711", Severity.CRITICAL, title="updated")], **CVE_UPSERT)
         stored = {c.id: c for c in await repo.list_all()}
 
     assert set(stored) == {"CVE-2021-3711", "CVE-2022-1304"}
@@ -56,25 +60,30 @@ async def test_cve_upsert_dedupes_and_refreshes(database):
     assert stored["CVE-2021-3711"].source is ScannerType.TRIVY
 
 
-async def test_package_ensure_many_is_idempotent(database):
+async def test_package_upsert_many_is_idempotent(database):
     pkgs = [Package(name="openssl", type="debian"), Package(name="openssl", type="debian"), Package(name="pip")]
     async with database.session() as session:
         repo = PackageRepository(session)
-        first = await repo.ensure_many(pkgs)
-        second = await repo.ensure_many([Package(name="openssl", type="debian")])
+        await repo.upsert_many(pkgs, **PACKAGE_UPSERT)
+        first = await repo.get_ids(pkgs)
+        await repo.upsert_many([Package(name="openssl", type="debian")], **PACKAGE_UPSERT)
+        second = await repo.get_ids([Package(name="openssl", type="debian")])
         count = len(await repo.list_all())
+        none = await repo.get_ids([])
 
     assert set(first) == {("openssl", "debian"), ("pip", "unknown")}
-    assert second[("openssl", "debian")] == first[("openssl", "debian")]
+    assert second == {("openssl", "debian"): first[("openssl", "debian")]}
     assert count == 2
+    assert none == {}
 
 
 async def test_replace_findings_for_image(database):
     async with database.session() as session:
         image = await ImageRepository(session).get_by_ref(ImageRef.parse("nginx:1.19"))
-        await CVERepository(session).upsert_many([_cve("CVE-2021-3711"), _cve("CVE-2022-1304")])
-        ids = await PackageRepository(session).ensure_many([Package(name="openssl", type="debian")])
-        pkg_id = ids[("openssl", "debian")]
+        await CVERepository(session).upsert_many([_cve("CVE-2021-3711"), _cve("CVE-2022-1304")], **CVE_UPSERT)
+        pkg_repo = PackageRepository(session)
+        await pkg_repo.upsert_many([Package(name="openssl", type="debian")], **PACKAGE_UPSERT)
+        pkg_id = (await pkg_repo.get_ids([Package(name="openssl", type="debian")]))[("openssl", "debian")]
         repo = ImageCVERepository(session)
 
         finding = ImageCVE(image_id=image.id, cve_id="CVE-2021-3711", package_id=pkg_id, installed_version="1.1.1d")
@@ -114,7 +123,7 @@ async def test_generic_update_and_delete_return_rowcounts(database):
 async def test_session_rolls_back_on_error(database):
     with pytest.raises(RuntimeError):
         async with database.session() as session:
-            await CVERepository(session).upsert_many([_cve("CVE-2020-0001")])
+            await CVERepository(session).upsert_many([_cve("CVE-2020-0001")], **CVE_UPSERT)
             raise RuntimeError("scan persistence failed")
 
     async with database.session() as session:

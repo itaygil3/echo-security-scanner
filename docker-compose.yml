@@ -39,6 +39,25 @@ services:
       timeout: 10s
       retries: 10
 
+  scanner:
+    build:
+      context: .
+      dockerfile: services/scanner/Dockerfile
+    command: ["python", "-m", "scanner", "--scanner", "trivy", "--concurrency", "${SCANNER_CONCURRENCY:-1}"]
+    environment:
+      <<: *common-env
+    volumes:
+      - trivy-cache:/var/cache/trivy
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    # Give running scans time to finish on `docker compose stop` (worker waits up to 30s).
+    stop_grace_period: 40s
+
 volumes:
   postgres-data:
   rabbitmq-data:
+  trivy-cache:

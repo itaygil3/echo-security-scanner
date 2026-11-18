@@ -4,10 +4,9 @@ from pathlib import Path
 import asyncpg
 import pytest
 from sqlalchemy.engine import URL, make_url
+from sqlalchemy.ext.asyncio import create_async_engine
 
-from echo_common.db import Database
-
-INIT_DIR = Path(__file__).resolve().parents[2] / "db" / "init"
+INIT_DIR = Path(__file__).resolve().parent / "db" / "init"
 TEST_URL = make_url(os.getenv("TEST_DATABASE_URL", "postgresql+asyncpg://echo:echo@localhost:5432/echo_test"))
 
 
@@ -16,7 +15,7 @@ def _asyncpg_dsn(url: URL, database: str) -> str:
 
 
 @pytest.fixture
-async def database():
+async def engine():
     """A fresh test database built from db/init/*.sql (schema + seed), skipped if Postgres is down."""
     try:
         admin = await asyncpg.connect(_asyncpg_dsn(TEST_URL, "postgres"), timeout=3)
@@ -35,6 +34,6 @@ async def database():
     finally:
         await conn.close()
 
-    db = Database(TEST_URL.render_as_string(hide_password=False))
-    yield db
-    await db.dispose()
+    engine = create_async_engine(TEST_URL.render_as_string(hide_password=False))
+    yield engine
+    await engine.dispose()

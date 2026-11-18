@@ -33,3 +33,5 @@ RUN useradd --create-home --uid 1000 scanner \
     && mkdir -p "$TRIVY_CACHE_DIR" \
     && chown scanner "$TRIVY_CACHE_DIR"
 USER scanner
+
+CMD ["python", "-m", "scanner", "--scanner", "trivy", "--concurrency", "1"]

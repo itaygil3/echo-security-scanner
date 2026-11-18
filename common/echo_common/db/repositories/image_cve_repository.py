@@ -16,4 +16,4 @@ class ImageCVERepository(BaseRepository[ImageCVE]):
         Duplicate findings are dropped by the uq_image_cve_package constraint.
         """
         await self.delete_where(image_cves.c.image_id == image_id)
-        await self.insert_many(items, conflict_on=["image_id", "cve_id", "package_id", "installed_version"])
+        await self.upsert_many(items, conflict_on=["image_id", "cve_id", "package_id", "installed_version"])

@@ -36,7 +36,7 @@ class BaseRepository[ModelT: DomainModel]:
 
     # --- writes ------------------------------------------------------------------------------
 
-    async def insert_many(
+    async def upsert_many(
         self,
         items: Iterable[ModelT],
         *,

@@ -15,7 +15,7 @@ class PackageRepository(BaseRepository[Package]):
         """Insert missing packages (duplicates dropped by the DB) and return their ids by (name, type)."""
         if not items:
             return {}
-        await self.insert_many(items, conflict_on=["name", "type"])
+        await self.upsert_many(items, conflict_on=["name", "type"])
         keys = {(p.name, p.type) for p in items}
         stored = await self.find_where(tuple_(packages.c.name, packages.c.type).in_(keys))
         return {(p.name, p.type): p.id for p in stored}

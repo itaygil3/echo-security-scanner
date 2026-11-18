@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS cves (
                  CHECK (severity IN ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN')),
     title        TEXT,
     description  TEXT,
-    primary_url  TEXT
+    primary_url  TEXT,
+    source       VARCHAR(32) NOT NULL                -- scanner that reported it, e.g. trivy
 );
 
 CREATE TABLE IF NOT EXISTS packages (

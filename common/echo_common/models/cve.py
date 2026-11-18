@@ -1,6 +1,6 @@
 from pydantic import Field
 
-from echo_common.enums import Severity
+from echo_common.enums import ScannerType, Severity
 from echo_common.models.base import CVE_ID_PATTERN, DomainModel
 
 
@@ -12,3 +12,4 @@ class CVE(DomainModel):
     title: str | None = None
     description: str | None = None
     primary_url: str | None = None
+    source: ScannerType = Field(description="Scanner that reported the CVE")

@@ -14,7 +14,6 @@ class Settings(BaseSettings):
     scan_queue: str = "scan_requests"
 
     scan_interval_seconds: int = Field(default=900, gt=0)
-    scanner_type: str = "trivy"
 
     log_level: str = "INFO"
 

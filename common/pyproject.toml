@@ -1,16 +1,16 @@
-[build-system]
-requires = ["setuptools>=69"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "echo-common"
 version = "0.1.0"
 description = "Shared config, enums, schemas and DB layer for the Echo security scanner services"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<4.0"
 dependencies = [
-    "pydantic>=2.7,<3",
-    "pydantic-settings>=2.3,<3",
+    "pydantic (>=2.7,<3.0)",
+    "pydantic-settings (>=2.3,<3.0)",
 ]
 
-[tool.setuptools.packages.find]
-include = ["echo_common*"]
+[tool.poetry]
+packages = [{ include = "echo_common" }]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

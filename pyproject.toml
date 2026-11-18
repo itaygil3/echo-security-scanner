@@ -1,4 +1,22 @@
-# Repo-wide tooling config (each service/package has its own pyproject for dependencies).
+# Root Poetry project: local dev environment (shared package + dev tools) and repo-wide tool config.
+# Each service has its own pyproject for its runtime dependencies.
+
+[project]
+name = "echo-security-scanner"
+version = "0.1.0"
+description = "Container security scanner: Trivy scans, PostgreSQL storage, REST API"
+requires-python = ">=3.12,<4.0"
+dependencies = ["echo-common"]
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.dependencies]
+echo-common = { path = "common", develop = true }
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8"
+ruff = ">=0.6"
 
 [tool.ruff]
 line-length = 120

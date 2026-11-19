@@ -39,8 +39,8 @@ CREATE TABLE IF NOT EXISTS image_cves (
     package_id         INTEGER     NOT NULL REFERENCES packages(id) ON DELETE CASCADE,
     installed_version  VARCHAR(255) NOT NULL,
     fixed_version      VARCHAR(255),
-    severity           VARCHAR(16) NOT NULL
-                       CHECK (severity IN ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN')),
+    -- 0=UNKNOWN 1=LOW 2=MEDIUM 3=HIGH 4=CRITICAL (Trivy's numeric mapping; higher is more severe)
+    severity           SMALLINT    NOT NULL CHECK (severity BETWEEN 0 AND 4),
     detected_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_image_cve_package UNIQUE (image_id, cve_id, package_id, installed_version)
 );

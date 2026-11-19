@@ -71,13 +71,15 @@ def test_package_requires_name():
 
 def test_image_cve_requires_package_installed_version_and_severity():
     ok = ImageCVE(
-        image_id=1, cve_id="CVE-2021-3711", package_id=2, installed_version="1.1.1d-0+deb10u6", severity="high"
+        image_id=1, cve_id="CVE-2021-3711", package_id=2, installed_version="1.1.1d-0+deb10u6", severity=Severity.HIGH
     )
     assert ok.fixed_version is None
-    assert ok.severity is Severity.HIGH  # case-insensitive
+    assert ImageCVE.model_validate({**ok.model_dump(), "severity": 3}).severity is Severity.HIGH  # from a DB row
     with pytest.raises(ValidationError):
-        ImageCVE(image_id=1, cve_id="CVE-2021-3711", package_id=2, installed_version="", severity="LOW")
+        ImageCVE(image_id=1, cve_id="CVE-2021-3711", package_id=2, installed_version="1.0", severity=9)
     with pytest.raises(ValidationError):
-        ImageCVE(image_id=1, cve_id="CVE-2021-3711", installed_version="1.0", severity="LOW")  # no package_id
+        ImageCVE(image_id=1, cve_id="CVE-2021-3711", package_id=2, installed_version="", severity=Severity.LOW)
+    with pytest.raises(ValidationError):
+        ImageCVE(image_id=1, cve_id="CVE-2021-3711", installed_version="1.0", severity=Severity.LOW)  # no package_id
     with pytest.raises(ValidationError):
         ImageCVE(image_id=1, cve_id="CVE-2021-3711", package_id=2, installed_version="1.0")  # no severity

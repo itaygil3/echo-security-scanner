@@ -27,5 +27,7 @@ def test_severity_parse(raw, expected):
     assert Severity.parse(raw) is expected
 
 
-def test_severity_case_insensitive_constructor():
-    assert Severity("low") is Severity.LOW
+def test_severity_is_ordered():
+    assert Severity.CRITICAL > Severity.HIGH > Severity.MEDIUM > Severity.LOW > Severity.UNKNOWN
+    assert max([Severity.LOW, Severity.CRITICAL, Severity.MEDIUM]) is Severity.CRITICAL
+    assert Severity(3) is Severity.HIGH and Severity["HIGH"] is Severity.HIGH

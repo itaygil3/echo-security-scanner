@@ -70,7 +70,7 @@ async def client(engine):
 async def test_health(client):
     response = await client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "database": "ok"}
+    assert response.json() == {"status": "ok"}
 
 
 async def test_health_reports_database_down():
@@ -79,7 +79,7 @@ async def test_health_reports_database_down():
         response = await client.get("/health")
     await engine.dispose()
     assert response.status_code == 503
-    assert response.json() == {"status": "error", "database": "unreachable"}
+    assert response.json() == {"status": "error"}
 
 
 async def test_list_images_with_severity_counts(client):

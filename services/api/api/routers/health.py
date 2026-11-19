@@ -9,11 +9,11 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health", response_model=HealthResponse)
 async def health(request: Request, response: Response) -> HealthResponse:
-    """Service health, including database connectivity (503 when the database is unreachable)."""
+    """Service health: "ok", or 503 "error" when the database is unreachable."""
     try:
         async with request.state.engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
     except (OSError, SQLAlchemyError):
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        return HealthResponse(status="error", database="unreachable")
-    return HealthResponse(status="ok", database="ok")
+        return HealthResponse(status="error")
+    return HealthResponse(status="ok")

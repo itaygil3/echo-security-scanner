@@ -1,34 +1,19 @@
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 
 
-class Severity(StrEnum):
-    """Vulnerability severity levels as reported by scanners."""
+class Severity(IntEnum):
+    """Vulnerability severity; values follow Trivy's numeric mapping, so severities compare and sort naturally."""
 
-    CRITICAL = "CRITICAL"
-    HIGH = "HIGH"
-    MEDIUM = "MEDIUM"
-    LOW = "LOW"
-    UNKNOWN = "UNKNOWN"
-
-    @classmethod
-    def parse(cls, value: str | None) -> "Severity":
-        """Map any scanner-provided value to a Severity, falling back to UNKNOWN."""
-        if not value:
-            return cls.UNKNOWN
-        try:
-            return cls(value.strip().upper())
-        except ValueError:
-            return cls.UNKNOWN
+    UNKNOWN = 0
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    CRITICAL = 4
 
     @classmethod
-    def _missing_(cls, value: object) -> "Severity | None":
-        # Allow case-insensitive construction, e.g. Severity("high").
-        if isinstance(value, str):
-            upper = value.strip().upper()
-            for member in cls:
-                if member.value == upper:
-                    return member
-        return None
+    def parse(cls, name: str | None) -> "Severity":
+        """Severity from a scanner's name (case-insensitive); UNKNOWN if missing or unrecognized."""
+        return cls.__members__.get((name or "").upper(), cls.UNKNOWN)
 
 
 class ScanStatus(StrEnum):
@@ -41,6 +26,6 @@ class ScanStatus(StrEnum):
 
 
 class ScannerType(StrEnum):
-    """Available vulnerability scanner implementations (selected with SCANNER_TYPE)."""
+    """Available vulnerability scanner implementations."""
 
     TRIVY = "trivy"

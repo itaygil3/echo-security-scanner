@@ -43,10 +43,10 @@ class ScanWorker:
         self.shutdown_timeout = shutdown_timeout
         self.scan_slots = asyncio.Semaphore(concurrency)
         self.tasks: set[asyncio.Task] = set()
-        self.images = ImageRepository(engine)
-        self.cves = CVERepository(engine)
-        self.packages = PackageRepository(engine)
-        self.image_cves = ImageCVERepository(engine)
+        self.image_repository = ImageRepository(engine)
+        self.cve_repository = CVERepository(engine)
+        self.package_repository = PackageRepository(engine)
+        self.image_cve_repository = ImageCVERepository(engine)
 
     async def run(self, stop: asyncio.Event) -> None:
         """Consume until `stop` is set, then let running scans finish (up to `shutdown_timeout`)."""
@@ -108,18 +108,18 @@ class ScanWorker:
 
     async def process(self, request: ScanRequest) -> None:
         """Scan one image (once a scan slot is free) and store the outcome on its row."""
-        image = await self.images.get(request.image_id)
+        image = await self.image_repository.get(request.image_id)
         if image is None:
             logger.warning("Image id %d (%s) no longer exists; skipping", request.image_id, request.image)
             return
 
         async with self.scan_slots:
-            await self.images.set_status(image.id, ScanStatus.SCANNING)
+            await self.image_repository.set_status(image.id, ScanStatus.SCANNING)
             try:
                 result = await self.scanner.scan(image)
             except ScannerError as exc:
                 logger.warning("Scan of %s failed: %s", image, exc)
-                await self.images.set_status(image.id, ScanStatus.FAILED, error=str(exc))
+                await self.image_repository.set_status(image.id, ScanStatus.FAILED, error=str(exc))
                 return
 
         await self.store_result(image, result)
@@ -130,12 +130,14 @@ class ScanWorker:
         Every step is idempotent and the findings are replaced atomically, so a crash midway is
         repaired by the next scan; SUCCESS is set last.
         """
-        await self.cves.upsert_many([f.cve for f in result.findings], conflict_on=["id"], update=CVE_DETAIL_COLUMNS)
+        await self.cve_repository.upsert_many(
+            [f.cve for f in result.findings], conflict_on=["id"], update=CVE_DETAIL_COLUMNS
+        )
         packages = [f.package for f in result.findings]
-        await self.packages.upsert_many(packages, conflict_on=["name", "type"])
-        package_ids = await self.packages.get_ids(packages)
+        await self.package_repository.upsert_many(packages, conflict_on=["name", "type"])
+        package_ids = await self.package_repository.get_ids(packages)
 
-        await self.image_cves.replace_for_image(
+        await self.image_cve_repository.replace_for_image(
             image.id,
             [
                 ImageCVE(
@@ -149,5 +151,5 @@ class ScanWorker:
                 for f in result.findings
             ],
         )
-        await self.images.set_status(image.id, ScanStatus.SUCCESS)
+        await self.image_repository.set_status(image.id, ScanStatus.SUCCESS)
         logger.info("Stored %d findings for %s", len(result.findings), image)

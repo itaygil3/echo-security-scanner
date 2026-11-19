@@ -16,12 +16,12 @@ class ScanPublisher:
 
     def __init__(self, engine: AsyncEngine, queue_name: str) -> None:
         self.queue_name = queue_name
-        self.images = ImageRepository(engine)
+        self.image_repository = ImageRepository(engine)
 
     async def publish_all(self, channel: AbstractChannel) -> int:
         """Enqueue a scan of every image; returns how many requests were published."""
         await declare_scan_queue(channel, self.queue_name)
-        images = await self.images.list_all()
+        images = await self.image_repository.list_all()
         for image in images:
             request = ScanRequest(image_id=image.id, image=ImageRef(name=image.name, tag=image.tag))
             await channel.default_exchange.publish(

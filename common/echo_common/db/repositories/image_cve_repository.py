@@ -1,8 +1,9 @@
-from sqlalchemy import delete
+from sqlalchemy import ColumnElement, delete, func, select
 
 from echo_common.db.repositories.base_repository import BaseRepository
-from echo_common.db.tables import image_cves
-from echo_common.models import ImageCVE
+from echo_common.db.tables import cves, image_cves, images, packages
+from echo_common.enums import Severity
+from echo_common.models import CVE, FindingDetail, ImageCVE
 
 
 class ImageCVERepository(BaseRepository[ImageCVE]):
@@ -25,3 +26,56 @@ class ImageCVERepository(BaseRepository[ImageCVE]):
             await conn.execute(delete(image_cves).where(image_cves.c.image_id == image_id))
             if rows:
                 await conn.execute(stmt, rows)
+
+    async def find_details(self, *where: ColumnElement[bool]) -> list[FindingDetail]:
+        """Findings joined with their image, CVE and package; most severe first."""
+        stmt = (
+            select(
+                image_cves.c.image_id,
+                images.c.name.label("image_name"),
+                images.c.tag.label("image_tag"),
+                image_cves.c.cve_id,
+                cves.c.title.label("cve_title"),
+                cves.c.description.label("cve_description"),
+                cves.c.primary_url.label("cve_primary_url"),
+                packages.c.name.label("package_name"),
+                packages.c.type.label("package_type"),
+                image_cves.c.installed_version,
+                image_cves.c.fixed_version,
+                image_cves.c.severity,
+            )
+            .select_from(image_cves.join(images).join(cves).join(packages))
+            .where(*where)
+            .order_by(image_cves.c.severity.desc(), image_cves.c.cve_id, packages.c.name)
+        )
+        async with self.engine.connect() as conn:
+            return [FindingDetail.model_validate(dict(row._mapping)) for row in await conn.execute(stmt)]
+
+    async def count_cves_by_severity(self) -> dict[int, dict[Severity, int]]:
+        """Distinct CVEs per image and severity: {image_id: {severity: count}}."""
+        stmt = select(
+            image_cves.c.image_id, image_cves.c.severity, func.count(image_cves.c.cve_id.distinct())
+        ).group_by(image_cves.c.image_id, image_cves.c.severity)
+        counts: dict[int, dict[Severity, int]] = {}
+        async with self.engine.connect() as conn:
+            for image_id, severity, count in await conn.execute(stmt):
+                counts.setdefault(image_id, {})[Severity(severity)] = count
+        return counts
+
+    async def list_cves(self, severity: Severity | None = None) -> list[tuple[CVE, Severity]]:
+        """Distinct CVEs found in any image with their highest severity, most severe first.
+
+        With `severity`, only findings with that severity are considered.
+        """
+        highest = func.max(image_cves.c.severity).label("severity")
+        stmt = (
+            select(cves.c.id, cves.c.title, cves.c.description, cves.c.primary_url, cves.c.source, highest)
+            .select_from(image_cves.join(cves))
+            .group_by(cves.c.id)  # one row per CVE (cves.id is the primary key)
+            .order_by(highest.desc(), cves.c.id)
+        )
+        if severity is not None:
+            stmt = stmt.where(image_cves.c.severity == severity)
+        async with self.engine.connect() as conn:
+            rows = (await conn.execute(stmt)).mappings()
+            return [(CVE.model_validate(dict(row)), Severity(row["severity"])) for row in rows]

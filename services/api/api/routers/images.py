@@ -12,8 +12,8 @@ router = APIRouter(prefix="/api/images", tags=["images"])
 @router.get("", response_model=list[ImageSummary])
 async def list_images(request: Request) -> list[ImageSummary]:
     """All scanned images with the number of distinct CVEs per severity."""
-    images = await request.app.state.images.list_all()
-    counts = await request.app.state.image_cves.count_cves_by_severity()
+    images = await request.state.image_repository.list_all()
+    counts = await request.state.image_cve_repository.count_cves_by_severity()
     summaries = []
     for image in images:
         by_severity = {severity.name: counts.get(image.id, {}).get(severity, 0) for severity in reversed(Severity)}
@@ -38,14 +38,14 @@ async def image_cves_list(
     severity: SeverityFilter,
 ) -> list[ImageVulnerability]:
     """CVEs found in one image (with package details), optionally filtered by severity."""
-    image = await request.app.state.images.get_by_ref(ImageRef(name=image_name, tag=tag))
+    image = await request.state.image_repository.get_by_ref(ImageRef(name=image_name, tag=tag))
     if image is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Image {image_name}:{tag} not found")
 
     where = [image_cves.c.image_id == image.id]
     if severity is not None:
         where.append(image_cves.c.severity == severity)
-    findings = await request.app.state.image_cves.find_details(*where)
+    findings = await request.state.image_cve_repository.find_details(*where)
     return [
         ImageVulnerability(
             cve_id=f.cve_id,

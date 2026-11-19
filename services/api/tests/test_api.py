@@ -1,5 +1,6 @@
 import httpx
 import pytest
+from asgi_lifespan import LifespanManager
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from api.main import create_app
@@ -9,6 +10,14 @@ from echo_common.models import CVE, ImageCVE, ImageRef, Package
 
 OPENSSL = Package(name="openssl", type="debian")
 ZLIB = Package(name="zlib", type="debian")
+
+
+async def _client(app):
+    """HTTP client running the app's lifespan, so request.state holds the engine and repositories."""
+    async with LifespanManager(app) as manager:
+        transport = httpx.ASGITransport(app=manager.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
 
 
 @pytest.fixture
@@ -54,8 +63,7 @@ async def client(engine):
     await images.set_status(postgres.id, ScanStatus.SUCCESS)
     await images.set_status(mysql.id, ScanStatus.SUCCESS)
 
-    transport = httpx.ASGITransport(app=create_app(engine))
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async for client in _client(create_app(engine)):
         yield client
 
 
@@ -67,8 +75,7 @@ async def test_health(client):
 
 async def test_health_reports_database_down():
     engine = create_async_engine("postgresql+asyncpg://echo:echo@localhost:1/none")
-    transport = httpx.ASGITransport(app=create_app(engine))
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async for client in _client(create_app(engine)):
         response = await client.get("/health")
     await engine.dispose()
     assert response.status_code == 503

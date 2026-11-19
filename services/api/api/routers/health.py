@@ -11,7 +11,7 @@ router = APIRouter(tags=["health"])
 async def health(request: Request, response: Response) -> HealthResponse:
     """Service health, including database connectivity (503 when the database is unreachable)."""
     try:
-        async with request.app.state.engine.connect() as conn:
+        async with request.state.engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
     except (OSError, SQLAlchemyError):
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE

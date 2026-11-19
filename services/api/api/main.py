@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -11,26 +12,22 @@ from echo_common.db.repositories import ImageCVERepository, ImageRepository
 from echo_common.logging import configure_logging
 
 
-def _attach(app: FastAPI, engine: AsyncEngine) -> None:
-    app.state.engine = engine
-    app.state.images = ImageRepository(engine)
-    app.state.image_cves = ImageCVERepository(engine)
-
-
 def create_app(engine: AsyncEngine | None = None) -> FastAPI:
-    """Build the API. Without `engine` it creates one from settings at startup (and disposes it at shutdown)."""
+    """Build the API. Without `engine` the lifespan creates one from settings (and disposes it at shutdown)."""
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        if engine is not None:
-            yield
-            return
+    async def lifespan(_app: FastAPI) -> AsyncIterator[dict[str, Any]]:
         settings = get_settings()
         configure_logging(settings.log_level, service="api")
-        owned = create_engine(settings)
-        _attach(app, owned)
-        yield
-        await owned.dispose()
+        db_engine = engine or create_engine(settings)
+        # Lifespan state: available in every request as request.state.<key>.
+        yield {
+            "engine": db_engine,
+            "image_repository": ImageRepository(db_engine),
+            "image_cve_repository": ImageCVERepository(db_engine),
+        }
+        if engine is None:
+            await db_engine.dispose()
 
     app = FastAPI(
         title="Echo Container Security Scanner API",
@@ -38,8 +35,6 @@ def create_app(engine: AsyncEngine | None = None) -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
-    if engine is not None:
-        _attach(app, engine)
     app.include_router(health.router)
     app.include_router(images.router)
     app.include_router(cves.router)

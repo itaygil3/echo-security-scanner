@@ -1,0 +1,20 @@
+[project]
+name = "echo-api"
+version = "0.1.0"
+description = "REST API over the container scan results"
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "echo-common",
+    "fastapi (>=0.115,<1.0)",
+    "uvicorn[standard] (>=0.30)",
+]
+
+[tool.poetry]
+packages = [{ include = "api" }]
+
+[tool.poetry.dependencies]
+echo-common = { path = "../../common", develop = true }
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

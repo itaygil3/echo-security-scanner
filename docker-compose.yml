@@ -43,7 +43,7 @@ services:
     build:
       context: .
       dockerfile: services/scanner/Dockerfile
-    command: ["python", "-m", "scanner", "--scanner", "trivy", "--concurrency", "${SCANNER_CONCURRENCY:-1}"]
+    command: ["python", "-m", "scanner", "--scanner", "trivy", "--concurrency", "${SCANNER_CONCURRENCY:-1}", "--timeout", "600"]
     environment:
       <<: *common-env
     volumes:

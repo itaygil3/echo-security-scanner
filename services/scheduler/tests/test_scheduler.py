@@ -3,6 +3,7 @@ import asyncio
 import aio_pika
 
 from echo_common.db.repositories import ImageRepository
+from echo_common.enums import ScanStatus
 from echo_common.messaging import ScanRequest
 from scheduler.publisher import ScanPublisher
 from scheduler.runner import ScanScheduler
@@ -56,6 +57,22 @@ async def test_publish_all_enqueues_every_image(engine):
     assert {key for _, key in channel.default_exchange.published} == {QUEUE}
     assert all(msg.delivery_mode == aio_pika.DeliveryMode.PERSISTENT for msg, _ in channel.default_exchange.published)
     assert channel.declared == [f"{QUEUE}.dlq", QUEUE]  # queue declared before publishing
+
+
+async def test_publish_all_skips_images_being_scanned(engine):
+    repository = ImageRepository(engine)
+    images = await repository.list_all()
+    scanning, finished = images[0], images[1]
+    await repository.set_status(scanning.id, ScanStatus.SCANNING)
+    await repository.set_status(finished.id, ScanStatus.FAILED, error="boom")
+    channel = FakeChannel()
+
+    published = await ScanPublisher(engine, QUEUE).publish_all(channel)
+
+    requested = {ScanRequest.model_validate_json(msg.body).image_id for msg, _ in channel.default_exchange.published}
+    assert published == len(requested) == 9
+    assert scanning.id not in requested
+    assert finished.id in requested  # PENDING, SUCCESS and FAILED images are all queued
 
 
 async def test_schedule_runs_immediately_and_on_interval():

@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS cves (
 CREATE TABLE IF NOT EXISTS packages (
     id    SERIAL PRIMARY KEY,
     name  VARCHAR(255) NOT NULL,
-    type  VARCHAR(64)  NOT NULL DEFAULT 'unknown',   -- deb, apk, npm, python-pkg, ...
+    type  VARCHAR(64)  NOT NULL DEFAULT 'unknown',   -- Trivy result type: debian, alpine, node-pkg, python-pkg, ...
     CONSTRAINT uq_packages_name_type UNIQUE (name, type)
 );
 

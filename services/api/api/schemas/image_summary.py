@@ -14,5 +14,5 @@ class ImageSummary(BaseModel):
     last_scan_at: datetime | None
     last_error: str | None
     severity_counts: dict[str, int] = Field(
-        examples=[{"CRITICAL": 12, "HIGH": 96, "MEDIUM": 167, "LOW": 83, "UNKNOWN": 5, "total": 362}]
+        examples=[{"CRITICAL": 11, "HIGH": 96, "MEDIUM": 167, "LOW": 83, "UNKNOWN": 5, "total": 362}]
     )

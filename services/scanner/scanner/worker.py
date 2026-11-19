@@ -98,7 +98,7 @@ class ScanWorker:
             return
 
         try:
-            await self.process(request)
+            await self.process(request, redelivered=message.redelivered)
         except Exception:
             logger.exception("Unexpected error processing %s, sending to dead-letter queue", request.image)
             await message.reject(requeue=False)
@@ -106,23 +106,44 @@ class ScanWorker:
 
         await message.ack()
 
-    async def process(self, request: ScanRequest) -> None:
-        """Scan one image (once a scan slot is free) and store the outcome on its row."""
+    async def process(self, request: ScanRequest, *, redelivered: bool = False) -> None:
+        """Scan one image (once a scan slot is free) and store the outcome on its row.
+
+        Skipped if the image is already SCANNING (another request for it is running). A redelivered
+        request takes the scan over: its previous delivery was interrupted (e.g. the worker stopped)
+        and left the image SCANNING.
+        """
         image = await self.image_repository.get(request.image_id)
         if image is None:
             logger.warning("Image id %d (%s) no longer exists; skipping", request.image_id, request.image)
             return
 
         async with self.scan_slots:
-            await self.image_repository.set_status(image.id, ScanStatus.SCANNING)
+            if not await self.image_repository.start_scan(image.id, force=redelivered):
+                logger.info("%s is already being scanned; skipping this request", image)
+                return
             try:
                 result = await self.scanner.scan(image)
             except ScannerError as exc:
                 logger.warning("Scan of %s failed: %s", image, exc)
                 await self.image_repository.set_status(image.id, ScanStatus.FAILED, error=str(exc))
                 return
+            except Exception:
+                await self._mark_failed_unexpectedly(image)
+                raise
 
-        await self.store_result(image, result)
+        try:
+            await self.store_result(image, result)
+        except Exception:
+            await self._mark_failed_unexpectedly(image)
+            raise
+
+    async def _mark_failed_unexpectedly(self, image: Image) -> None:
+        """Don't leave the image SCANNING after an unexpected error: SCANNING images are never rescheduled."""
+        try:
+            await self.image_repository.set_status(image.id, ScanStatus.FAILED, error="Unexpected scanner error")
+        except Exception:
+            logger.exception("Could not mark %s FAILED", image)
 
     async def store_result(self, image: Image, result: ScanResult) -> None:
         """Store a successful scan.

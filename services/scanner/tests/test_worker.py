@@ -99,6 +99,36 @@ async def test_unknown_image_is_skipped(engine):
     assert scanner.max_running == 0
 
 
+async def test_image_already_scanning_is_skipped(engine):
+    request = await _request(engine, "nginx:1.19")
+    await ImageRepository(engine).set_status(request.image_id, ScanStatus.SCANNING)
+    scanner = FakeScanner()
+
+    await _worker(engine, scanner).process(request)
+
+    assert scanner.max_running == 0
+    assert (await ImageRepository(engine).get(request.image_id)).scan_status is ScanStatus.SCANNING
+
+
+async def test_same_image_twice_is_scanned_once(engine):
+    scanner = FakeScanner(delay=0.2)
+    worker = _worker(engine, scanner, concurrency=2)
+    request = await _request(engine, "nginx:1.19")
+
+    await asyncio.gather(worker.process(request), worker.process(request))
+
+    assert scanner.max_running == 1
+
+
+async def test_redelivered_request_takes_over_interrupted_scan(engine):
+    request = await _request(engine, "nginx:1.19")
+    await ImageRepository(engine).set_status(request.image_id, ScanStatus.SCANNING)  # worker died mid-scan
+
+    await _worker(engine, FakeScanner()).process(request, redelivered=True)
+
+    assert (await ImageRepository(engine).get(request.image_id)).scan_status is ScanStatus.SUCCESS
+
+
 async def test_semaphore_limits_concurrent_scans(engine):
     scanner = FakeScanner(delay=0.2)
     worker = _worker(engine, scanner, concurrency=2)
@@ -116,8 +146,9 @@ async def test_semaphore_limits_concurrent_scans(engine):
 class FakeMessage:
     """Stand-in for an aio-pika incoming message: records how it was settled."""
 
-    def __init__(self, body: bytes):
+    def __init__(self, body: bytes, redelivered: bool = False):
         self.body = body
+        self.redelivered = redelivered
         self.settled: str | None = None
 
     async def ack(self):
@@ -158,6 +189,8 @@ async def test_unexpected_error_is_dead_lettered(engine):
     await _worker(engine, FakeScanner(error=RuntimeError("bug"))).process_message(message)
 
     assert message.settled == "reject(requeue=False)"
+    image = await ImageRepository(engine).get(request.image_id)
+    assert image.scan_status is ScanStatus.FAILED  # not left SCANNING, so the next round queues it again
 
 
 async def test_cancelled_scan_is_not_settled(engine):

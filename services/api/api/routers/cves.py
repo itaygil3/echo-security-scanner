@@ -10,15 +10,10 @@ router = APIRouter(prefix="/api/cves", tags=["cves"])
 @router.get("", response_model=list[CVESummary])
 async def list_cves(request: Request, severity: SeverityFilter) -> list[CVESummary]:
     """Unique CVEs across all images, optionally filtered by severity."""
-    where = [image_cves.c.severity == severity] if severity is not None else []
-    findings = await request.app.state.image_cves.find_details(*where)
-    unique: dict[str, CVESummary] = {}
-    for f in findings:  # most severe first, so the first finding of a CVE carries its highest severity
-        unique.setdefault(
-            f.cve_id,
-            CVESummary(cve_id=f.cve_id, severity=f.severity.name, title=f.cve_title, primary_url=f.cve_primary_url),
-        )
-    return list(unique.values())
+    return [
+        CVESummary(cve_id=cve.id, severity=highest.name, title=cve.title, primary_url=cve.primary_url)
+        for cve, highest in await request.app.state.image_cves.list_cves(severity)
+    ]
 
 
 @router.get("/{cve_id}/images", response_model=list[AffectedImage])

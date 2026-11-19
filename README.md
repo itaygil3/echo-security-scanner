@@ -10,6 +10,7 @@ It's built as small services that talk through RabbitMQ, each with its own Docke
 
 - [Architecture](#architecture)
 - [Quick start](#quick-start)
+- [End-to-end verification checklist](#end-to-end-verification-checklist)
 - [Configuration](#configuration)
 - [API](#api)
 - [Database schema](#database-schema)
@@ -78,6 +79,41 @@ docker compose restart scheduler   # trigger a new scan round now
 
 > The schema is created by `db/init/*.sql` only when the Postgres volume is empty. After pulling schema changes,
 > run `docker compose down -v`.
+
+## End-to-end verification checklist
+
+Run these after `docker compose up -d --build` to check the whole system works.
+
+- [ ] **All services are up.** `docker compose ps` shows 5 services running, and `postgres`, `rabbitmq` and
+  `api` are `healthy`.
+- [ ] **The API is healthy.** `curl localhost:8000/health` returns `{"status":"ok"}`.
+- [ ] **The scheduler queued every image.** `docker compose logs scheduler` shows
+  `Published 10 scan requests to 'scan_requests'`.
+- [ ] **The worker scanned them.** `docker compose logs scanner` shows `Scanned <image> in …` and
+  `Stored … findings for <image>` for each image.
+- [ ] **Every image has results.** In `curl localhost:8000/api/images`, all 10 images have
+  `"scan_status": "SUCCESS"`, a `last_scan_at`, and non-zero `severity_counts.total`.
+- [ ] **Per-image CVEs and the severity filter work.**
+  `curl 'localhost:8000/api/images/redis/6.0/cves?severity=CRITICAL'` returns only `CRITICAL` entries, each
+  with package name, installed version and fixed version.
+- [ ] **Unique CVEs work.** `curl localhost:8000/api/cves` lists each CVE once, and
+  `curl 'localhost:8000/api/cves?severity=CRITICAL'` returns a shorter list.
+- [ ] **CVE to images works.** `curl localhost:8000/api/cves/CVE-2022-37434/images` lists `alpine:3.12` and
+  `nginx:1.19` with their packages.
+- [ ] **Errors are handled.** `curl localhost:8000/api/images/nginx/nope/cves` returns 404, and
+  `curl 'localhost:8000/api/cves?severity=SEVERE'` returns 422.
+- [ ] **A failed scan is recorded, not crashed on.** Add an image that doesn't exist and start a new round:
+
+  ```bash
+  docker compose exec postgres psql -U echo -d echo \
+    -c "INSERT INTO images (name, tag) VALUES ('nginx', 'does-not-exist');"
+  docker compose restart scheduler
+  ```
+
+  Within a minute `/api/images` shows it as `"scan_status": "FAILED"` with
+  `"last_error": "Image nginx:does-not-exist not found: …"`, and the other images keep scanning. Clean up with
+  `DELETE FROM images WHERE tag = 'does-not-exist';`.
+- [ ] **The automated e2e tests pass.** `poetry run pytest -m e2e` (see [Development](#development)).
 
 ## Configuration
 
